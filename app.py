@@ -401,6 +401,8 @@ def dashboard():
         st.info("ยังไม่มีวันที่สำหรับสร้างแผนภูมิ")
 
     data = data.reset_index(drop=True)
+    st.write("จำนวนรายการทั้งหมด:", len(data))
+    st.write("ข้อมูลที่โหลดมา:", data)
     options = list(range(len(data)))
 
     def item_label(i):
