@@ -29,80 +29,68 @@ DATA_DIR.mkdir(exist_ok=True)
 # =====================================
 # CSS DESIGN
 # =====================================
+
 st.markdown("""
 <style>
 .stApp {
-    background: linear-gradient(135deg, #f3f6ff 0%, #effaf6 100%);
-    color: #293247;
+    background: #f0f5fb;
+    color: #303747;
 }
 .block-container {
-    max-width: 1100px;
+    max-width: 560px;
     padding-top: 2rem;
-    padding-bottom: 3rem;
-}
-h1, h2, h3 {
-    color: #293247;
+    padding-bottom: 2rem;
 }
 .hero {
-    text-align: center;
-    padding: 18px 0 24px 0;
-}
-.hero-title {
-    font-size: 44px;
-    font-weight: 800;
-    letter-spacing: -1px;
-    color: #303747;
-}
-.hero-subtitle {
-    color: #7b8495;
-    font-size: 16px;
-    margin-top: 6px;
+    display: none;
 }
 .auth-card {
-    background: rgba(255,255,255,0.96);
-    border: 1px solid #e5eaf3;
-    border-radius: 22px;
-    padding: 28px 30px;
-    box-shadow: 0 12px 35px rgba(40,55,90,0.09);
-}
-.card-heading {
-    font-size: 26px;
-    font-weight: 750;
-    color: #303747;
-    margin-bottom: 5px;
-}
-.card-caption {
-    font-size: 14px;
-    color: #818a9b;
-    margin-bottom: 22px;
-}
-div[data-testid="stMetric"] {
     background: #ffffff;
-    border: 1px solid #e5eaf3;
-    padding: 18px;
-    border-radius: 17px;
-    box-shadow: 0 5px 18px rgba(40,55,90,0.05);
-}
-div.stButton > button,
-div.stFormSubmitButton > button {
-    border-radius: 11px;
-    min-height: 44px;
-    font-weight: 600;
+    border-radius: 20px;
+    padding: 24px 18px;
+    box-shadow: 0 5px 24px rgba(40, 55, 90, 0.04);
+    border: none;
 }
 div[data-testid="stTabs"] button {
     font-weight: 600;
 }
-div[data-testid="stVerticalBlockBorderWrapper"] {
-    border-radius: 18px;
+div[data-testid="stTextInput"] input {
+    background: #f3f6fa;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    min-height: 48px;
+}
+div[data-testid="stTextInput"] input:focus {
+    border-color: #6576ed;
+    box-shadow: 0 0 0 1px #6576ed;
+}
+div.stButton > button,
+div.stFormSubmitButton > button {
+    border-radius: 10px;
+    min-height: 48px;
+    font-weight: 600;
+}
+div.stFormSubmitButton > button {
+    background: #6576ed;
+    color: white;
+    border: none;
+}
+div.stFormSubmitButton > button:hover {
+    background: #5365dc;
+    color: white;
 }
 div[data-testid="stAlert"] {
-    border-radius: 12px;
+    border-radius: 10px;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 18px;
 }
 footer {
     visibility: hidden;
 }
 </style>
 """, unsafe_allow_html=True)
+
 
 # =====================================
 # USER ACCOUNTS
