@@ -253,7 +253,7 @@ if not st.session_state.logged_in:
         # ---------------------------------
         with login_tab:
             st.markdown(
-                '<div class="card-heading">ยินดีต้อนรับกลับ!</div>'
+                '<div class="card-heading">ยินดีต้อนรับสมาซิก!</div>'
                 '<div class="card-caption">'
                 'เข้าสู่ระบบเพื่อจัดการเงินของคุณ'
                 '</div>',
