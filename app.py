@@ -491,30 +491,31 @@ with st.container(border=True):
 
     expense_df = df[df["ประเภท"] == "รายจ่าย"].copy()
 
-    if not expense_df.empty:
-        totals = expense_df.groupby(
-            "หมวดหมู่", as_index=False
-        )["จำนวนเงิน"].sum()
+if not expense_df.empty:
+    totals = expense_df.groupby(
+        "หมวดหมู่", as_index=False
+    )["จำนวนเงิน"].sum()
 
-        fig = px.pie(
-            totals,
-            names="หมวดหมู่",
-            values="จำนวนเงิน",
-            hole=0.48
-        )
-        fig.update_layout(
-    autosize=True,
-    height=380,
-    margin=dict(t=30, b=20, l=20, r=20),
-    legend_title_text="หมวดหมู่"
-)
+    fig = px.pie(
+        totals,
+        names="หมวดหมู่",
+        values="จำนวนเงิน",
+        hole=0.48
+    )
 
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
-    else:
-        st.info("ยังไม่มีข้อมูลรายจ่ายสำหรับแสดงกราฟ")
+    fig.update_layout(
+        autosize=True,
+        height=380,
+        margin=dict(t=30, b=20, l=20, r=20),
+        legend_title_text="หมวดหมู่"
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+else:
+    st.info("ยังไม่มีข้อมูลรายจ่ายสำหรับแสดงกราฟ")
 
 # =====================================
 # HISTORY
