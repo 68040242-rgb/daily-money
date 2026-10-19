@@ -1,5 +1,7 @@
+
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import json
 import hashlib
 import secrets
@@ -8,495 +10,594 @@ import re
 from pathlib import Path
 from datetime import date
 
-# -------------------------
+# =========================
 # ตั้งค่าหน้าเว็บ
-# -------------------------
+# =========================
 st.set_page_config(
     page_title="Daily Money",
     page_icon="💰",
-    layout="wide"
+    layout="wide",
 )
 
+st.markdown("""
+<style>
+    .block-container {
+        max-width: 1250px;
+        padding-top: 1.5rem;
+        padding-bottom: 3rem;
+    }
+
+    h1, h2, h3 {
+        letter-spacing: -0.3px;
+    }
+
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 16px;
+        border-color: #DCE3ED;
+    }
+
+    div[data-testid="stMetric"] {
+        background: #F7F9FC;
+        border: 1px solid #E5EAF2;
+        border-radius: 12px;
+        padding: 15px;
+    }
+
+    div[data-testid="stMetricValue"] {
+        font-size: 1.6rem;
+    }
+
+    .small-note {
+        color: #64748b;
+        font-size: 0.9rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# ไฟล์และข้อมูล
+# =========================
 USERS_FILE = Path("users.json")
 DATA_DIR = Path("user_data")
 DATA_DIR.mkdir(exist_ok=True)
 
-COLUMNS = [
-    "วันที่", "ประเภท", "หมวดหมู่",
-    "จำนวนเงิน", "รายละเอียด"
+COLUMNS = ["วันที่", "ประเภท", "หมวดหมู่", "จำนวนเงิน", "รายละเอียด"]
+CATEGORIES = [
+    "เงินค่าขนม", "เงินเดือน", "อาหาร",
+    "เดินทาง", "การเรียน", "ช้อปปิ้ง", "อื่น ๆ"
 ]
 
-# -------------------------
-# ระบบบัญชีผู้ใช้
-# -------------------------
 def load_users():
-    if USERS_FILE.exists():
-        try:
-            return json.loads(
-                USERS_FILE.read_text(encoding="utf-8")
-            )
-        except (json.JSONDecodeError, OSError):
-            st.error("อ่านไฟล์บัญชีผู้ใช้ไม่ได้ กรุณาตรวจสอบ users.json")
-            st.stop()
-    return {}
-
+    if not USERS_FILE.exists():
+        return {}
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            result = json.load(f)
+        return result if isinstance(result, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 def save_users(users):
-    USERS_FILE.write_text(
-        json.dumps(users, ensure_ascii=False, indent=2),
-        encoding="utf-8"
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+def user_data_path(username):
+    # ใช้ชื่อไฟล์ที่ไม่เปิดเผยชื่อผู้ใช้โดยตรง
+    safe_name = hashlib.sha256(username.lower().encode()).hexdigest()
+    return DATA_DIR / f"{safe_name}.csv"
+
+def empty_data():
+    return pd.DataFrame(columns=COLUMNS)
+
+def load_transactions(username):
+    path = user_data_path(username)
+
+    if not path.exists():
+        return empty_data()
+
+    try:
+        data = pd.read_csv(path, encoding="utf-8-sig")
+        for col in COLUMNS:
+            if col not in data.columns:
+                data[col] = ""
+
+        data = data[COLUMNS].copy()
+        data["วันที่"] = pd.to_datetime(
+            data["วันที่"], errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
+        data["จำนวนเงิน"] = pd.to_numeric(
+            data["จำนวนเงิน"], errors="coerce"
+        ).fillna(0.0)
+        data["รายละเอียด"] = data["รายละเอียด"].fillna("").astype(str)
+        data["ประเภท"] = data["ประเภท"].fillna("รายจ่าย").astype(str)
+        data["หมวดหมู่"] = data["หมวดหมู่"].fillna("อื่น ๆ").astype(str)
+        return data
+
+    except (OSError, ValueError, pd.errors.ParserError):
+        st.error("อ่านไฟล์รายการไม่ได้ กรุณาตรวจสอบไฟล์ CSV")
+        return empty_data()
+
+def save_transactions(data, username):
+    output = data.copy()
+    output = output.reindex(columns=COLUMNS)
+    output["รายละเอียด"] = output["รายละเอียด"].fillna("").astype(str)
+    output.to_csv(
+        user_data_path(username),
+        index=False,
+        encoding="utf-8-sig"
     )
 
-
-def hash_password(password, salt=None):
-    if salt is None:
-        salt = secrets.token_hex(16)
-
-    result = hashlib.pbkdf2_hmac(
+# =========================
+# รหัสผ่าน
+# =========================
+def hash_password(password, salt):
+    return hashlib.pbkdf2_hmac(
         "sha256",
         password.encode("utf-8"),
-        bytes.fromhex(salt),
+        salt.encode("utf-8"),
         300000
-    )
+    ).hex()
 
-    return salt, result.hex()
+def valid_password(password, salt, expected_hash):
+    actual_hash = hash_password(password, salt)
+    return hmac.compare_digest(actual_hash, expected_hash)
 
-
-def verify_password(password, user):
-    salt, expected = user["salt"], user["password_hash"]
-    _, actual = hash_password(password, salt)
-    return hmac.compare_digest(actual, expected)
-
-
-def valid_username(username):
-    return bool(re.fullmatch(r"[A-Za-z0-9_]{4,20}", username))
-
-
-def user_data_file(username):
-    # ใช้ชื่อไฟล์จากแฮช ไม่ใช้ username เป็น path โดยตรง
-    key = hashlib.sha256(username.lower().encode()).hexdigest()
-    return DATA_DIR / f"{key}.csv"
-
-
-# -------------------------
-# CAPTCHA สำหรับฝึกใช้งาน
-# -------------------------
-def new_captcha():
-    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    return "".join(secrets.choice(alphabet) for _ in range(5))
-
-
-if "captcha" not in st.session_state:
-    st.session_state.captcha = new_captcha()
-
+# =========================
+# สถานะผู้ใช้และ CAPTCHA
+# =========================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if "username" not in st.session_state:
     st.session_state.username = ""
 
-
-# -------------------------
-# อ่านและบันทึกธุรกรรม
-# -------------------------
-def load_transactions(username):
-    path = user_data_file(username)
-
-    if path.exists():
-        try:
-            data = pd.read_csv(path)
-            for column in COLUMNS:
-                if column not in data.columns:
-                    data[column] = ""
-            data["จำนวนเงิน"] = pd.to_numeric(
-                data["จำนวนเงิน"], errors="coerce"
-            ).fillna(0)
-            return data[COLUMNS]
-        except (ValueError, OSError, pd.errors.ParserError):
-            st.error("อ่านไฟล์รายการเงินไม่ได้")
-            st.stop()
-
-    return pd.DataFrame(columns=COLUMNS)
-
-
-def save_transactions(data, username):
-    data.to_csv(
-        user_data_file(username),
-        index=False,
-        encoding="utf-8-sig"
+if "captcha" not in st.session_state:
+    st.session_state.captcha = "".join(
+        secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        for _ in range(5)
     )
 
+def new_captcha():
+    st.session_state.captcha = "".join(
+        secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        for _ in range(5)
+    )
 
-def calculate_total(data, kind):
-    amounts = pd.to_numeric(
-        data.loc[data["ประเภท"] == kind, "จำนวนเงิน"],
-        errors="coerce"
-    ).fillna(0)
-    return amounts.sum()
-
-
-# -------------------------
-# หน้า Login / Sign up
-# -------------------------
+# =========================
+# สมัครสมาชิก / เข้าสู่ระบบ
+# =========================
 def auth_page():
-    st.title("💰 Daily Money")
-    st.write("เว็บบันทึกรายรับ–รายจ่ายส่วนตัว")
-    st.subheader("ยินดีต้อนรับ")
-
-    st.info(
-        "Username ต้องมี 4–20 ตัวอักษร ใช้ภาษาอังกฤษ "
-        "ตัวเลข หรือ _ เท่านั้น"
+    st.markdown(
+        "<h1 style='text-align:center'>💰 Daily Money</h1>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<p style='text-align:center;color:#64748b'>"
+        "ผู้ช่วยจัดการรายรับ–รายจ่ายของคุณ</p>",
+        unsafe_allow_html=True
     )
 
-    login_tab, signup_tab = st.tabs(
-        ["🔑 Log in", "📝 Sign up"]
-    )
+    left, center, right = st.columns([1, 1.5, 1])
 
-    with login_tab:
-        st.markdown("### เข้าสู่ระบบ")
-
-        with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input(
-                "Password", type="password"
+    with center:
+        with st.container(border=True):
+            login_tab, signup_tab = st.tabs(
+                ["🔐 เข้าสู่ระบบ", "📝 สมัครสมาชิก"]
             )
 
-            st.markdown("**CAPTCHA: พิมพ์รหัสด้านล่าง**")
-            st.code(st.session_state.captcha)
+            with login_tab:
+                st.subheader("ยินดีต้อนรับกลับ")
 
-            captcha_input = st.text_input(
-                "รหัสยืนยัน", key="login_captcha_input"
-            )
+                with st.form("login_form"):
+                    login_username = st.text_input("ชื่อผู้ใช้")
+                    login_password = st.text_input(
+                        "รหัสผ่าน", type="password"
+                    )
 
-            login_button = st.form_submit_button(
-                "Log in", use_container_width=True
-            )
+                    st.caption(
+                        f"CAPTCHA: **{st.session_state.captcha}**"
+                    )
+                    login_captcha = st.text_input(
+                        "พิมพ์รหัส CAPTCHA"
+                    )
 
-        if login_button:
-            users = load_users()
-            account = users.get(username.lower())
+                    login_submit = st.form_submit_button(
+                        "เข้าสู่ระบบ", use_container_width=True
+                    )
 
-            captcha_ok = (
-                captcha_input.strip().upper()
-                == st.session_state.captcha
-            )
+                if login_submit:
+                    users = load_users()
+                    key = login_username.strip().lower()
+                    user = users.get(key)
 
-            if not captcha_ok:
-                st.error("CAPTCHA ไม่ถูกต้อง")
-                st.session_state.captcha = new_captcha()
-                st.rerun()
+                    captcha_ok = hmac.compare_digest(
+                        login_captcha.strip().upper(),
+                        st.session_state.captcha
+                    )
+                    new_captcha()
 
-            if account and verify_password(password, account):
-                st.session_state.logged_in = True
-                st.session_state.username = username.lower()
-                st.rerun()
-            else:
-                st.error("Username หรือ Password ไม่ถูกต้อง")
-                st.session_state.captcha = new_captcha()
-                st.rerun()
+                    if not captcha_ok:
+                        st.error("CAPTCHA ไม่ถูกต้อง กรุณาลองใหม่")
+                    elif not user:
+                        st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                    elif not valid_password(
+                        login_password,
+                        user["salt"],
+                        user["password_hash"]
+                    ):
+                        st.error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                    else:
+                        st.session_state.logged_in = True
+                        st.session_state.username = key
+                        st.rerun()
 
-    with signup_tab:
-        st.markdown("### สมัครสมาชิก")
+                if st.button("🔄 เปลี่ยน CAPTCHA", key="refresh_login"):
+                    new_captcha()
+                    st.rerun()
 
-        with st.form("signup_form"):
-            new_username = st.text_input(
-                "ตั้ง Username", key="signup_username"
-            )
-            new_password = st.text_input(
-                "ตั้ง Password",
-                type="password",
-                key="signup_password"
-            )
-            confirm_password = st.text_input(
-                "ยืนยัน Password",
-                type="password",
-                key="signup_confirm"
-            )
+            with signup_tab:
+                st.subheader("สร้างบัญชีใหม่")
 
-            st.markdown("**CAPTCHA: พิมพ์รหัสด้านล่าง**")
-            st.code(st.session_state.captcha)
+                with st.form("signup_form"):
+                    new_username = st.text_input(
+                        "ชื่อผู้ใช้ (4–20 ตัวอักษร)"
+                    )
+                    new_password = st.text_input(
+                        "รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)",
+                        type="password"
+                    )
+                    confirm_password = st.text_input(
+                        "ยืนยันรหัสผ่าน", type="password"
+                    )
 
-            signup_captcha = st.text_input(
-                "รหัสยืนยัน",
-                key="signup_captcha_input"
-            )
+                    st.caption(
+                        f"CAPTCHA: **{st.session_state.captcha}**"
+                    )
+                    signup_captcha = st.text_input(
+                        "พิมพ์รหัส CAPTCHA"
+                    )
 
-            signup_button = st.form_submit_button(
-                "Sign up", use_container_width=True
-            )
+                    signup_submit = st.form_submit_button(
+                        "สมัครสมาชิก", use_container_width=True
+                    )
 
-        if signup_button:
-            users = load_users()
-            normalized = new_username.strip().lower()
+                if signup_submit:
+                    users = load_users()
+                    key = new_username.strip().lower()
 
-            if not valid_username(new_username.strip()):
-                st.error(
-                    "Username ต้องมี 4–20 ตัว "
-                    "ใช้ A-Z, a-z, 0-9 หรือ _"
-                )
-            elif normalized in users:
-                st.error("Username นี้มีผู้ใช้แล้ว")
-            elif len(new_password) < 8:
-                st.error("Password ต้องมีอย่างน้อย 8 ตัวอักษร")
-            elif new_password != confirm_password:
-                st.error("Password ทั้งสองช่องไม่ตรงกัน")
-            elif signup_captcha.strip().upper() != st.session_state.captcha:
-                st.error("CAPTCHA ไม่ถูกต้อง")
-                st.session_state.captcha = new_captcha()
-                st.rerun()
-            else:
-                salt, password_hash = hash_password(new_password)
+                    captcha_ok = hmac.compare_digest(
+                        signup_captcha.strip().upper(),
+                        st.session_state.captcha
+                    )
+                    new_captcha()
 
-                users[normalized] = {
-                    "salt": salt,
-                    "password_hash": password_hash
-                }
-                save_users(users)
+                    if not captcha_ok:
+                        st.error("CAPTCHA ไม่ถูกต้อง กรุณาลองใหม่")
+                    elif not re.fullmatch(
+                        r"[a-zA-Z0-9_]{4,20}", new_username.strip()
+                    ):
+                        st.error(
+                            "ชื่อผู้ใช้ต้องมี 4–20 ตัว "
+                            "ใช้ภาษาอังกฤษ ตัวเลข หรือ _ เท่านั้น"
+                        )
+                    elif len(new_password) < 8:
+                        st.error("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร")
+                    elif new_password != confirm_password:
+                        st.error("รหัสผ่านทั้งสองช่องไม่ตรงกัน")
+                    elif key in users:
+                        st.error("ชื่อผู้ใช้นี้ถูกใช้แล้ว")
+                    else:
+                        salt = secrets.token_hex(16)
+                        users[key] = {
+                            "salt": salt,
+                            "password_hash": hash_password(
+                                new_password, salt
+                            )
+                        }
+                        save_users(users)
+                        st.success(
+                            "สมัครสมาชิกสำเร็จ ไปที่แท็บเข้าสู่ระบบได้เลย"
+                        )
+                        st.rerun()
 
-                st.success(
-                    "สมัครสมาชิกสำเร็จ! ไปที่ Log in เพื่อเข้าสู่ระบบ"
-                )
-                st.session_state.captcha = new_captcha()
+                if st.button(
+                    "🔄 เปลี่ยน CAPTCHA", key="refresh_signup"
+                ):
+                    new_captcha()
+                    st.rerun()
 
-    if st.button("🔄 เปลี่ยน CAPTCHA"):
-        st.session_state.captcha = new_captcha()
-        st.rerun()
-
-
-# -------------------------
+# =========================
 # หน้า Dashboard
-# -------------------------
+# =========================
 def dashboard():
     username = st.session_state.username
 
-    top_left, top_right = st.columns([4, 1])
-    top_left.title("💰 Daily Money")
-    top_left.caption(f"เข้าสู่ระบบในชื่อ {username}")
+    header_col, logout_col = st.columns([5, 1])
+    with header_col:
+        st.title("💰 Daily Money")
+        st.caption(f"สวัสดี, {username} — จัดการเงินของคุณได้ที่นี่")
 
-    if top_right.button("Log out", use_container_width=True):
-        st.session_state.logged_in = False
-        st.session_state.username = ""
-        st.rerun()
+    with logout_col:
+        if st.button("ออกจากระบบ", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.rerun()
 
     data = load_transactions(username)
+    data = data.reset_index(drop=True)
 
-    income = calculate_total(data, "รายรับ")
-    expense = calculate_total(data, "รายจ่าย")
-    balance = income - expense
+    data["จำนวนเงิน"] = pd.to_numeric(
+        data["จำนวนเงิน"], errors="coerce"
+    ).fillna(0.0)
+    data["รายละเอียด"] = data["รายละเอียด"].fillna("").astype(str)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("💚 รายรับรวม", f"{income:,.2f} บาท")
-    col2.metric("❤️ รายจ่ายรวม", f"{expense:,.2f} บาท")
-    col3.metric("💵 เงินคงเหลือ", f"{balance:,.2f} บาท")
+    total_income = data.loc[
+        data["ประเภท"] == "รายรับ", "จำนวนเงิน"
+    ].sum()
 
-    st.divider()
-    st.subheader("📝 เพิ่มรายการ")
+    total_expense = data.loc[
+        data["ประเภท"] == "รายจ่าย", "จำนวนเงิน"
+    ].sum()
 
-    with st.form("add_transaction", clear_on_submit=True):
-        day = st.date_input("วันที่", value=date.today())
-        kind = st.selectbox("ประเภท", ["รายรับ", "รายจ่าย"])
-        category = st.selectbox(
-            "หมวดหมู่",
-            ["เงินค่าขนม", "เงินเดือน", "อาหาร",
-             "เดินทาง", "การเรียน", "ช้อปปิ้ง", "อื่น ๆ"]
-        )
-        amount = st.number_input(
-            "จำนวนเงิน (บาท)", min_value=0.01, value=1.0
-        )
-        detail = st.text_input("รายละเอียด")
+    balance = total_income - total_expense
 
-        add = st.form_submit_button("บันทึกรายการ")
+    # ----- การ์ดภาพรวม -----
+    with st.container(border=True):
+        st.subheader("📊 ภาพรวมการเงิน")
+        c1, c2, c3 = st.columns(3)
 
-        if add:
+        c1.metric("💚 รายรับรวม", f"{total_income:,.2f} บาท")
+        c2.metric("💗 รายจ่ายรวม", f"{total_expense:,.2f} บาท")
+        c3.metric("💵 เงินคงเหลือ", f"{balance:,.2f} บาท")
+
+    # ----- การ์ดเพิ่มรายการ -----
+    with st.container(border=True):
+        st.subheader("📝 เพิ่มรายการ")
+
+        with st.form("add_transaction", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                add_day = st.date_input("วันที่", value=date.today())
+                add_kind = st.selectbox(
+                    "ประเภท", ["รายรับ", "รายจ่าย"]
+                )
+                add_category = st.selectbox(
+                    "หมวดหมู่", CATEGORIES
+                )
+
+            with col2:
+                add_amount = st.number_input(
+                    "จำนวนเงิน (บาท)", min_value=0.01,
+                    value=100.0, step=10.0
+                )
+                add_detail = st.text_input("รายละเอียด")
+
+            add_submit = st.form_submit_button(
+                "➕ บันทึกรายการ", use_container_width=True
+            )
+
+        if add_submit:
             new_row = pd.DataFrame([{
-                "วันที่": day.isoformat(),
-                "ประเภท": kind,
-                "หมวดหมู่": category,
-                "จำนวนเงิน": amount,
-                "รายละเอียด": detail
+                "วันที่": add_day.isoformat(),
+                "ประเภท": add_kind,
+                "หมวดหมู่": add_category,
+                "จำนวนเงิน": float(add_amount),
+                "รายละเอียด": add_detail.strip()
             }])
 
             data = pd.concat([data, new_row], ignore_index=True)
             save_transactions(data, username)
-            st.success("บันทึกรายการแล้ว")
+            st.success("บันทึกรายการเรียบร้อยแล้ว")
             st.rerun()
 
-    st.divider()
-    st.subheader("📋 ประวัติรายรับ–รายจ่าย")
+    # ----- การ์ดประวัติ -----
+    with st.container(border=True):
+        st.subheader("🧾 ประวัติรายรับ–รายจ่าย")
 
-    if data.empty:
-        st.info("ยังไม่มีรายการ ลองเพิ่มรายการแรกได้เลย")
-        return
-
-    
-    # ===== แผนภูมิวงกลมสรุปรายจ่ายประจำเดือน =====
-    st.divider()
-    st.subheader("📊 แผนภูมิวงกลมรายจ่ายประจำเดือน")
-
-    chart_data = data.copy()
-    chart_data["วันที่"] = pd.to_datetime(
-        chart_data["วันที่"], errors="coerce"
-    )
-    chart_data["จำนวนเงิน"] = pd.to_numeric(
-        chart_data["จำนวนเงิน"], errors="coerce"
-    ).fillna(0)
-
-    valid_dates = chart_data["วันที่"].dropna()
-
-    if not valid_dates.empty:
-        months = sorted(
-            valid_dates.dt.to_period("M").unique(),
-            reverse=True
-        )
-
-        selected_month = st.selectbox(
-            "เลือกเดือน",
-            months,
-            format_func=lambda month: month.strftime("%m/%Y"),
-            key="expense_chart_month"
-        )
-
-        monthly_data = chart_data[
-            (chart_data["วันที่"].dt.to_period("M") == selected_month)
-            & (chart_data["ประเภท"] == "รายจ่าย")
-        ]
-
-        if not monthly_data.empty:
-            summary = monthly_data.groupby(
-                "หมวดหมู่"
-            )["จำนวนเงิน"].sum().sort_values(ascending=False)
-
-            st.metric(
-                "รายจ่ายรวมประจำเดือน",
-                f"{summary.sum():,.2f} บาท"
-            )
-
-            st.plotly_chart(
-                {
-                    "data": [{
-                        "type": "pie",
-                        "labels": summary.index.tolist(),
-                        "values": summary.values.tolist(),
-                        "hole": 0,
-                        "textinfo": "label+percent",
-                        "hovertemplate":
-                            "%{label}<br>%{value:,.2f} บาท"
-                            "<br>%{percent}<extra></extra>"
-                    }],
-                    "layout": {
-                        "title": "สัดส่วนรายจ่ายตามหมวดหมู่",
-                        "height": 450
-                    }
-                },
-                use_container_width=True
+        if data.empty:
+            st.info("ยังไม่มีรายการ ลองเพิ่มรายการแรกได้เลย")
+        else:
+            history = data.copy()
+            history["จำนวนเงิน"] = history["จำนวนเงิน"].map(
+                lambda x: f"{x:,.2f}"
             )
 
             st.dataframe(
-                summary.rename("จำนวนเงิน (บาท)"),
+                history,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.download_button(
+                "📥 ดาวน์โหลดรายงาน CSV",
+                data=data.to_csv(
+                    index=False
+                ).encode("utf-8-sig"),
+                file_name="daily_money_report.csv",
+                mime="text/csv",
                 use_container_width=True
             )
+
+    # ----- การ์ดกราฟ -----
+    with st.container(border=True):
+        st.subheader("📈 แผนภูมิวงกลมรายจ่ายประจำเดือน")
+
+        chart_data = data.copy()
+        chart_data["วันที่"] = pd.to_datetime(
+            chart_data["วันที่"], errors="coerce"
+        )
+
+        valid_dates = chart_data["วันที่"].dropna()
+
+        if valid_dates.empty:
+            st.info("เพิ่มรายการที่มีวันที่ เพื่อเริ่มดูกราฟ")
         else:
-            st.info("เดือนนี้ยังไม่มีรายการรายจ่าย")
-    else:
-        st.info("ยังไม่มีวันที่สำหรับสร้างแผนภูมิ")
+            months = sorted(
+                valid_dates.dt.to_period("M").unique(),
+                reverse=True
+            )
 
-    data = data.reset_index(drop=True)
-    st.write("จำนวนรายการทั้งหมด:", len(data))
-    st.write("ข้อมูลที่โหลดมา:", data)
-    options = list(range(len(data)))
+            selected_month = st.selectbox(
+                "เลือกเดือน",
+                months,
+                format_func=lambda m: m.strftime("%m/%Y"),
+                key="chart_month"
+            )
 
-    def item_label(i):
-        row = data.iloc[i]
-        return (
-            f"{i + 1}. {row['วันที่']} | {row['ประเภท']} | "
-            f"{row['รายละเอียด']} | {row['จำนวนเงิน']:,.2f} บาท"
-        )
+            monthly_expenses = chart_data[
+                (chart_data["วันที่"].dt.to_period("M") == selected_month)
+                & (chart_data["ประเภท"] == "รายจ่าย")
+            ].copy()
 
-    selected = st.selectbox(
-        "เลือกรายการเพื่อแก้ไขหรือลบ",
-        options,
-        format_func=item_label
-    )
+            if monthly_expenses.empty:
+                st.info("เดือนนี้ยังไม่มีรายการรายจ่าย")
+            else:
+                summary = (
+                    monthly_expenses.groupby("หมวดหมู่")["จำนวนเงิน"]
+                    .sum()
+                    .reset_index()
+                    .sort_values("จำนวนเงิน", ascending=False)
+                )
 
-    row = data.iloc[selected]
+                st.metric(
+                    "รายจ่ายรวมประจำเดือน",
+                    f"{summary['จำนวนเงิน'].sum():,.2f} บาท"
+                )
 
-    with st.form("edit_transaction"):
-        st.markdown("### ✏️ แก้ไขรายการ")
+                fig = px.pie(
+                    summary,
+                    names="หมวดหมู่",
+                    values="จำนวนเงิน",
+                    hole=0.35,
+                    title="สัดส่วนรายจ่ายตามหมวดหมู่"
+                )
+                fig.update_traces(
+                    textposition="inside",
+                    textinfo="label+percent",
+                    hovertemplate=(
+                        "%{label}<br>%{value:,.2f} บาท"
+                        "<br>%{percent}<extra></extra>"
+                    )
+                )
+                fig.update_layout(
+                    height=380,
+                    margin=dict(t=60, b=20, l=20, r=20),
+                    legend_title_text="หมวดหมู่"
+                )
+                st.plotly_chart(
+                    fig, use_container_width=True
+                )
 
-        try:
-            old_day = pd.to_datetime(row["วันที่"]).date()
-        except (ValueError, TypeError):
-            old_day = date.today()
+                st.dataframe(
+                    summary,
+                    use_container_width=True,
+                    hide_index=True
+                )
 
-        edit_day = st.date_input("วันที่", value=old_day)
-        edit_kind = st.selectbox(
-            "ประเภท",
-            ["รายรับ", "รายจ่าย"],
-            index=0 if row["ประเภท"] == "รายรับ" else 1
-        )
+    # ----- การ์ดแก้ไขและลบ -----
+    with st.container(border=True):
+        st.subheader("✏️ แก้ไขหรือลบรายการ")
 
-        categories = [
-            "เงินค่าขนม", "เงินเดือน", "อาหาร",
-            "เดินทาง", "การเรียน", "ช้อปปิ้ง", "อื่น ๆ"
-        ]
-        old_category = str(row["หมวดหมู่"])
-        category_index = (
-            categories.index(old_category)
-            if old_category in categories else len(categories) - 1
-        )
+        if data.empty:
+            st.info("ยังไม่มีรายการให้แก้ไขหรือลบ")
+        else:
+            options = list(range(len(data)))
 
-        edit_category = st.selectbox(
-            "หมวดหมู่", categories, index=category_index
-        )
-        edit_amount = st.number_input(
-            "จำนวนเงิน (บาท)",
-            min_value=0.01,
-            value=max(float(row["จำนวนเงิน"]), 0.01)
-        )
-        edit_detail = st.text_input(
-            "รายละเอียด",
-            value="" if pd.isna(row["รายละเอียด"])
-            else str(row["รายละเอียด"])
-        )
+            def item_label(i):
+                row = data.iloc[i]
+                return (
+                    f"{i + 1}. {row['วันที่']} | {row['ประเภท']} | "
+                    f"{row['รายละเอียด']} | "
+                    f"{row['จำนวนเงิน']:,.2f} บาท"
+                )
 
-        update = st.form_submit_button("บันทึกการแก้ไข")
+            selected = st.selectbox(
+                "เลือกรายการ",
+                options,
+                format_func=item_label,
+                key="edit_selected"
+            )
 
-        if update:
-            data.loc[selected, "วันที่"] = edit_day.isoformat()
-            data.loc[selected, "ประเภท"] = edit_kind
-            data.loc[selected, "หมวดหมู่"] = edit_category
-            data.loc[selected, "จำนวนเงิน"] = edit_amount
-            data["รายละเอียด"] = data["รายละเอียด"].fillna("").astype(object)
-            data.loc[selected, "รายละเอียด"] = edit_detail
+            row = data.iloc[selected]
 
-            save_transactions(data, username)
-            st.success("แก้ไขรายการแล้ว")
-            st.rerun()
+            with st.form("edit_transaction"):
+                st.markdown("#### แก้ไขรายละเอียด")
 
-    if st.button("🗑️ ลบรายการที่เลือก"):
-        data = data.drop(index=selected).reset_index(drop=True)
-        save_transactions(data, username)
-        st.success("ลบรายการแล้ว")
-        st.rerun()
+                try:
+                    old_day = pd.to_datetime(row["วันที่"]).date()
+                except (ValueError, TypeError):
+                    old_day = date.today()
 
-    st.divider()
-    st.dataframe(
-        data.sort_values("วันที่", ascending=False),
-        use_container_width=True,
-        hide_index=True
-    )
+                edit_day = st.date_input("วันที่", value=old_day)
+                edit_kind = st.selectbox(
+                    "ประเภท",
+                    ["รายรับ", "รายจ่าย"],
+                    index=0 if row["ประเภท"] == "รายรับ" else 1
+                )
 
-    st.download_button(
-        "📥 ดาวน์โหลดรายงาน CSV",
-        data=data.to_csv(index=False).encode("utf-8-sig"),
-        file_name="รายรับรายจ่าย.csv",
-        mime="text/csv"
-    )
+                old_category = str(row["หมวดหมู่"])
+                category_index = (
+                    CATEGORIES.index(old_category)
+                    if old_category in CATEGORIES
+                    else len(CATEGORIES) - 1
+                )
 
+                edit_category = st.selectbox(
+                    "หมวดหมู่",
+                    CATEGORIES,
+                    index=category_index
+                )
 
-# -------------------------
-# เรียกหน้าเว็บตามสถานะ
-# -------------------------
+                edit_amount = st.number_input(
+                    "จำนวนเงิน (บาท)",
+                    min_value=0.01,
+                    value=max(float(row["จำนวนเงิน"]), 0.01),
+                    step=10.0
+                )
+
+                edit_detail = st.text_input(
+                    "รายละเอียด",
+                    value=str(row["รายละเอียด"])
+                )
+
+                update = st.form_submit_button(
+                    "💾 บันทึกการแก้ไข",
+                    use_container_width=True
+                )
+
+            if update:
+                data.loc[selected, "วันที่"] = edit_day.isoformat()
+                data.loc[selected, "ประเภท"] = edit_kind
+                data.loc[selected, "หมวดหมู่"] = edit_category
+                data.loc[selected, "จำนวนเงิน"] = float(edit_amount)
+                data.loc[selected, "รายละเอียด"] = edit_detail
+
+                save_transactions(data, username)
+                st.success("แก้ไขรายการเรียบร้อยแล้ว")
+                st.rerun()
+
+            st.divider()
+            confirm_delete = st.checkbox(
+                "ฉันยืนยันว่าต้องการลบรายการที่เลือก"
+            )
+
+            if st.button(
+                "🗑️ ลบรายการที่เลือก",
+                type="secondary",
+                use_container_width=True
+            ):
+                if confirm_delete:
+                    data = data.drop(index=selected).reset_index(drop=True)
+                    save_transactions(data, username)
+                    st.success("ลบรายการเรียบร้อยแล้ว")
+                    st.rerun()
+                else:
+                    st.warning("กรุณาติ๊กยืนยันก่อนลบรายการ")
+
+# =========================
+# เริ่มต้นแอป
+# =========================
 if st.session_state.logged_in:
     dashboard()
 else:
