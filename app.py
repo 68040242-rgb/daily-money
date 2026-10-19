@@ -37,9 +37,9 @@ st.markdown("""
     color: #303747;
 }
 .block-container {
-    max-width: 560px;
-    padding-top: 2rem;
-    padding-bottom: 2rem;
+    max-width: 1200px;
+    width: 100%;
+    padding: 1.5rem 1.5rem 3rem 1.5rem;
 }
 .hero {
     display: none;
@@ -471,10 +471,17 @@ expense = df.loc[df["ประเภท"] == "รายจ่าย", "จำน
 balance = income - expense
 
 st.subheader("📊 ภาพรวมการเงิน")
+
 c1, c2, c3 = st.columns(3)
-c1.metric("💵 รายรับรวม", f"฿{income:,.2f}")
-c2.metric("🛍️ รายจ่ายรวม", f"฿{expense:,.2f}")
-c3.metric("💰 คงเหลือ", f"฿{balance:,.2f}")
+
+with c1:
+    st.metric("💵 รายรับรวม", f"฿{income:,.2f}")
+
+with c2:
+    st.metric("🛍️ รายจ่ายรวม", f"฿{expense:,.2f}")
+
+with c3:
+    st.metric("💰 คงเหลือ", f"฿{balance:,.2f}")
 
 # =====================================
 # EXPENSE CHART
@@ -496,10 +503,16 @@ with st.container(border=True):
             hole=0.48
         )
         fig.update_layout(
-            margin=dict(t=15, b=15, l=10, r=10),
-            legend_title_text="หมวดหมู่"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    autosize=True,
+    height=380,
+    margin=dict(t=30, b=20, l=20, r=20),
+    legend_title_text="หมวดหมู่"
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
     else:
         st.info("ยังไม่มีข้อมูลรายจ่ายสำหรับแสดงกราฟ")
 
@@ -517,10 +530,23 @@ with st.container(border=True):
             lambda value: f"฿{value:,.2f}"
         )
         st.dataframe(
-            shown_df,
-            use_container_width=True,
-            hide_index=True
-        )
+    df,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "วันที่": st.column_config.DateColumn(
+            "วันที่",
+            format="YYYY-MM-DD"
+        ),
+        "ประเภท": st.column_config.TextColumn("ประเภท"),
+        "หมวดหมู่": st.column_config.TextColumn("หมวดหมู่"),
+        "รายละเอียด": st.column_config.TextColumn("รายละเอียด"),
+        "จำนวนเงิน": st.column_config.NumberColumn(
+            "จำนวนเงิน (บาท)",
+            format="฿%.2f"
+        ),
+    }
+)
 
         st.download_button(
             "⬇️ ดาวน์โหลดประวัติ CSV",
