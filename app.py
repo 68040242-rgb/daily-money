@@ -251,7 +251,7 @@ if not st.session_state.logged_in:
         )
 
         with login_tab:
-            st.subheader("ยินดีต้อนรับกลับ!")
+            st.subheader("ยินดีต้อนรับสมาซิก!")
 
             ensure_captcha()
 
