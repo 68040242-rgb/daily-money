@@ -464,6 +464,7 @@ def dashboard():
             data.loc[selected, "ประเภท"] = edit_kind
             data.loc[selected, "หมวดหมู่"] = edit_category
             data.loc[selected, "จำนวนเงิน"] = edit_amount
+            data["รายละเอียด"] = data["รายละเอียด"].fillna("").astype(object)
             data.loc[selected, "รายละเอียด"] = edit_detail
 
             save_transactions(data, username)
