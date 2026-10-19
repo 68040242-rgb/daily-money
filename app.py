@@ -226,48 +226,59 @@ st.markdown("""
 # =====================================
 # AUTH PAGES
 # =====================================
+
 if not st.session_state.logged_in:
-    left_space, center, right_space = st.columns([1, 2, 1])
+    left, center, right = st.columns([0.2, 3, 0.2])
 
     with center:
-        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style="text-align:center; padding: 4px 0 18px;">
+                <div style="font-size:28px; font-weight:750; color:#303747;">
+                    💰 Daily Money
+                </div>
+                <div style="color:#818a9b; font-size:14px; margin-top:4px;">
+                    จัดการเงินของคุณให้ง่ายขึ้น
+                </div>
+            </div>
+            <hr style="border:0; border-top:1px solid #e5eaf3;">
+            """,
+            unsafe_allow_html=True
+        )
 
         login_tab, signup_tab = st.tabs(
             ["🔐 เข้าสู่ระบบ", "📝 สมัครสมาชิก"]
         )
 
-        # ---------------------------------
-        # LOGIN
-        # ---------------------------------
         with login_tab:
-            st.markdown(
-                '<div class="card-heading">ยินดีต้อนรับสมาซิก!</div>'
-                '<div class="card-caption">'
-                'เข้าสู่ระบบเพื่อจัดการเงินของคุณ'
-                '</div>',
-                unsafe_allow_html=True
-            )
+            st.subheader("ยินดีต้อนรับกลับ!")
 
             ensure_captcha()
 
             with st.form("login_form"):
                 login_username = st.text_input(
-                    "ชื่อผู้ใช้", key="login_username"
+                    "ชื่อผู้ใช้",
+                    placeholder="กรอกชื่อผู้ใช้ของคุณ"
                 )
                 login_password = st.text_input(
                     "รหัสผ่าน",
                     type="password",
-                    key="login_password"
+                    placeholder="กรอกรหัสผ่านของคุณ"
                 )
+
                 st.info(
                     "🧮 แก้โจทย์: "
                     + st.session_state.math_captcha["question"]
                 )
+
                 login_answer = st.text_input(
-                    "คำตอบ CAPTCHA", key="login_answer"
+                    "คำตอบ CAPTCHA",
+                    placeholder="พิมพ์คำตอบ"
                 )
+
                 login_submit = st.form_submit_button(
-                    "เข้าสู่ระบบ", use_container_width=True
+                    "เข้าสู่ระบบ",
+                    use_container_width=True
                 )
 
             if st.button(
@@ -306,43 +317,40 @@ if not st.session_state.logged_in:
             if st.session_state.get("login_message"):
                 st.error(st.session_state.login_message)
 
-        # ---------------------------------
-        # SIGNUP
-        # ---------------------------------
         with signup_tab:
-            st.markdown(
-                '<div class="card-heading">สร้างบัญชีใหม่</div>'
-                '<div class="card-caption">'
-                'สมัครสมาชิกเพื่อเริ่มบันทึกรายรับรายจ่าย'
-                '</div>',
-                unsafe_allow_html=True
-            )
+            st.subheader("สร้างบัญชีใหม่")
 
             ensure_captcha()
 
             with st.form("signup_form"):
                 signup_username = st.text_input(
-                    "ตั้งชื่อผู้ใช้", key="signup_username"
+                    "ตั้งชื่อผู้ใช้",
+                    placeholder="ชื่อผู้ใช้ 4–20 ตัว"
                 )
                 signup_password = st.text_input(
                     "ตั้งรหัสผ่าน",
                     type="password",
-                    key="signup_password"
+                    placeholder="อย่างน้อย 8 ตัวอักษร"
                 )
                 signup_confirm = st.text_input(
                     "ยืนยันรหัสผ่าน",
                     type="password",
-                    key="signup_confirm"
+                    placeholder="กรอกรหัสผ่านอีกครั้ง"
                 )
+
                 st.info(
                     "🧮 แก้โจทย์: "
                     + st.session_state.math_captcha["question"]
                 )
+
                 signup_answer = st.text_input(
-                    "คำตอบ CAPTCHA", key="signup_answer"
+                    "คำตอบ CAPTCHA",
+                    placeholder="พิมพ์คำตอบ"
                 )
+
                 signup_submit = st.form_submit_button(
-                    "สมัครสมาชิก", use_container_width=True
+                    "สมัครสมาชิก",
+                    use_container_width=True
                 )
 
             if st.button(
@@ -364,9 +372,11 @@ if not st.session_state.logged_in:
                     clean_username = signup_username.strip()
                     key = clean_username.lower()
                     users = load_users()
-
                     error = None
-                    if not re.fullmatch(r"[A-Za-z0-9_]{4,20}", clean_username):
+
+                    if not re.fullmatch(
+                        r"[A-Za-z0-9_]{4,20}", clean_username
+                    ):
                         error = "ชื่อผู้ใช้ต้องมี 4–20 ตัว ใช้ภาษาอังกฤษ ตัวเลข หรือ _"
                     elif key in users:
                         error = "ชื่อผู้ใช้นี้ถูกใช้แล้ว"
@@ -390,9 +400,8 @@ if not st.session_state.logged_in:
             if st.session_state.get("signup_message"):
                 st.success(st.session_state.signup_message)
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
     st.stop()
+
 
 # =====================================
 # DASHBOARD
