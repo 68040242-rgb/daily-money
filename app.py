@@ -186,7 +186,7 @@ def auth_page():
             )
 
             with login_tab:
-                st.subheader("ยินดีต้อนรับกลับ")
+                st.subheader("ยินดีต้อนรับสมาซิก")
 
                 with st.form("login_form"):
                     login_username = st.text_input("ชื่อผู้ใช้")
