@@ -247,7 +247,7 @@ if not st.session_state.logged_in:
         )
 
         login_tab, signup_tab = st.tabs(
-            ["🔐 เข้าสู่ระบบ", "📝 สมัครสมาชิก"]
+            ["🔐 เข้าสู่ระบบ", "📝 สมัครสมาซิก"]
         )
 
         with login_tab:
@@ -349,7 +349,7 @@ if not st.session_state.logged_in:
                 )
 
                 signup_submit = st.form_submit_button(
-                    "สมัครสมาชิก",
+                    "สมัครสมาซิก",
                     use_container_width=True
                 )
 
@@ -400,7 +400,7 @@ if not st.session_state.logged_in:
                         st.session_state.pop("math_captcha", None)
                         st.session_state.pop("login_message", None)
                         st.session_state.pop("signup_message", None)
-                        
+
                         st.rerun()
 
             if st.session_state.get("signup_message"):
