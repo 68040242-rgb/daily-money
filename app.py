@@ -391,10 +391,16 @@ if not st.session_state.logged_in:
                     else:
                         users[key] = make_password_record(signup_password)
                         save_users(users)
-                        st.session_state.signup_message = (
-                            "สมัครสมาชิกสำเร็จ! ไปที่แท็บเข้าสู่ระบบได้เลย"
-                        )
+
+                        # เข้าสู่ระบบให้อัตโนมัติ
+                        st.session_state.logged_in = True
+                        st.session_state.username = key
+
+                        # ล้างข้อมูล CAPTCHA และข้อความเก่า
                         st.session_state.pop("math_captcha", None)
+                        st.session_state.pop("login_message", None)
+                        st.session_state.pop("signup_message", None)
+                        
                         st.rerun()
 
             if st.session_state.get("signup_message"):
