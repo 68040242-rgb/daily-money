@@ -25,6 +25,7 @@ BASE_DIR = Path(__file__).parent
 USERS_FILE = BASE_DIR / "users.json"
 DATA_DIR = BASE_DIR / "user_data"
 DATA_DIR.mkdir(exist_ok=True)
+BUDGETS_FILE = BASE_DIR / "budgets.json"
 
 # =====================================
 # CSS DESIGN
@@ -137,6 +138,25 @@ def transaction_path(username):
         username.lower().encode("utf-8")
     ).hexdigest()
     return DATA_DIR / f"{filename}.csv"
+
+# =====================================
+# USER BUDGETS
+# =====================================
+def load_budgets():
+    if not BUDGETS_FILE.exists():
+        return {}
+    try:
+        with open(BUDGETS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_budgets(budgets):
+    with open(BUDGETS_FILE, "w", encoding="utf-8") as f:
+        json.dump(budgets, f, ensure_ascii=False, indent=2)
+
 
 # =====================================
 # TRANSACTION DATA
@@ -488,6 +508,67 @@ with c2:
 
 with c3:
     st.metric("💰 คงเหลือ", f"฿{balance:,.2f}")
+
+# =====================================
+# SMART MONEY DETECTIVE + CATEGORY BUDGETS
+# =====================================
+with st.container(border=True):
+    st.subheader("🕵️ Smart Money Detective — นักสืบรายจ่าย")
+    st.caption("วิเคราะห์รายจ่ายจากข้อมูลที่บันทึก และช่วยเตือนเมื่อใกล้ถึงงบประมาณ")
+
+    categories = [
+        "อาหาร", "เดินทาง", "การเรียน", "ของใช้",
+        "เงินเดือน/ค่าขนม", "ความบันเทิง", "อื่น ๆ"
+    ]
+    budgets = load_budgets()
+    user_budgets = budgets.get(username, {})
+
+    budget_col1, budget_col2 = st.columns([2, 1])
+    with budget_col1:
+        budget_category = st.selectbox(
+            "เลือกหมวดหมู่เพื่อตั้งงบประมาณ", categories, key="budget_category"
+        )
+    with budget_col2:
+        current_budget = float(user_budgets.get(budget_category, 0))
+        budget_amount = st.number_input(
+            "งบประมาณ (บาท)", min_value=0.0, value=current_budget,
+            step=100.0, key=f"budget_amount_{budget_category}"
+        )
+
+    if st.button("💾 บันทึกงบประมาณ", use_container_width=True):
+        if budget_amount <= 0:
+            user_budgets.pop(budget_category, None)
+        else:
+            user_budgets[budget_category] = float(budget_amount)
+        budgets[username] = user_budgets
+        save_budgets(budgets)
+        st.success("บันทึกงบประมาณแล้ว" if budget_amount > 0 else "ลบงบประมาณของหมวดนี้แล้ว")
+        st.rerun()
+
+    expense_df = df[df["ประเภท"] == "รายจ่าย"].copy()
+    if not expense_df.empty:
+        category_totals = expense_df.groupby("หมวดหมู่")["จำนวนเงิน"].sum().sort_values(ascending=False)
+        top_category = str(category_totals.index[0])
+        top_amount = float(category_totals.iloc[0])
+        st.info(f"🔎 นักสืบพบว่า หมวด **{top_category}** เป็นหมวดที่ใช้เงินมากที่สุด รวม **฿{top_amount:,.2f}** จากรายการที่บันทึกไว้")
+
+        if user_budgets:
+            st.markdown("**🚦 สถานะงบประมาณของคุณ**")
+            for category, limit in user_budgets.items():
+                spent = float(category_totals.get(category, 0))
+                ratio = spent / float(limit) if float(limit) > 0 else 0
+                st.write(f"**{category}** — ใช้ไป ฿{spent:,.2f} / ฿{float(limit):,.2f}")
+                st.progress(min(ratio, 1.0))
+                if ratio >= 1:
+                    st.error(f"เกินงบหมวด{category}แล้ว {((spent / float(limit)) - 1) * 100:.0f}%")
+                elif ratio >= 0.8:
+                    st.warning(f"ใกล้ถึงงบหมวด{category}แล้ว ใช้ไป {ratio * 100:.0f}%")
+                else:
+                    st.success(f"หมวด{category}ยังอยู่ในงบ ใช้ไป {ratio * 100:.0f}%")
+        else:
+            st.caption("เริ่มต้นโดยตั้งงบประมาณของแต่ละหมวดด้านบน เพื่อให้ระบบช่วยติดตามการใช้เงินได้")
+    else:
+        st.info("ยังไม่มีข้อมูลรายจ่าย เพิ่มรายการรายจ่ายก่อน แล้วนักสืบจะช่วยวิเคราะห์ให้")
 
 # =====================================
 # EXPENSE CHART
