@@ -509,6 +509,81 @@ with c2:
 with c3:
     st.metric("💰 คงเหลือ", f"฿{balance:,.2f}")
 
+
+# =====================================
+# BUY OR WAIT? — PURCHASE IMPACT SIMULATOR
+# =====================================
+with st.container(border=True):
+    st.subheader("🛒 Buy or Wait? — ลองคิดก่อนซื้อ")
+    st.caption(
+        "ทดลองดูว่าการซื้อครั้งนี้จะกระทบเงินคงเหลือและเป้าหมายเงินสำรองของคุณอย่างไร "
+        "ฟีเจอร์นี้เป็นการจำลอง ไม่ได้ตัดสินใจแทนผู้ใช้"
+    )
+
+    buy_col1, buy_col2, buy_col3 = st.columns(3)
+    with buy_col1:
+        item_name = st.text_input(
+            "สิ่งที่อยากซื้อ",
+            placeholder="เช่น หูฟัง / หนังสือ",
+            key="buy_item_name"
+        )
+    with buy_col2:
+        item_price = st.number_input(
+            "ราคาสินค้า (บาท)",
+            min_value=0.0,
+            value=0.0,
+            step=50.0,
+            key="buy_item_price"
+        )
+    with buy_col3:
+        reserve_target = st.number_input(
+            "เงินที่อยากเหลือไว้ (บาท)",
+            min_value=0.0,
+            value=0.0,
+            step=100.0,
+            key="buy_reserve_target"
+        )
+
+    remaining_after_purchase = balance - item_price
+    shortfall = max(0.0, reserve_target - remaining_after_purchase)
+
+    metric1, metric2, metric3 = st.columns(3)
+    metric1.metric("เงินคงเหลือปัจจุบัน", f"฿{balance:,.2f}")
+    metric2.metric(
+        "เงินหลังซื้อ (จำลอง)",
+        f"฿{remaining_after_purchase:,.2f}",
+        delta=f"฿{-item_price:,.2f}" if item_price else None,
+        delta_color="inverse"
+    )
+    metric3.metric("เป้าหมายเงินสำรอง", f"฿{reserve_target:,.2f}")
+
+    if item_price <= 0:
+        st.info("กรอกราคาสินค้าเพื่อเริ่มจำลองผลกระทบก่อนซื้อ")
+    elif remaining_after_purchase < 0:
+        st.error(
+            f"⚠️ หากซื้อ{(' ' + item_name.strip()) if item_name.strip() else 'สินค้านี้'} "
+            f"เงินคงเหลือจำลองจะติดลบ ฿{abs(remaining_after_purchase):,.2f} "
+            "ลองพิจารณาราคาอื่นหรือรอจนมีเงินเพิ่ม"
+        )
+    elif remaining_after_purchase < reserve_target:
+        st.warning(
+            f"🟡 หากซื้อ{(' ' + item_name.strip()) if item_name.strip() else 'สินค้านี้'} "
+            f"เงินจะเหลือ ฿{remaining_after_purchase:,.2f} "
+            f"ต่ำกว่าเป้าหมายเงินสำรอง ฿{shortfall:,.2f}"
+        )
+        st.caption("คุณอาจเปรียบเทียบทางเลือกอื่นหรือปรับแผนก่อนตัดสินใจ")
+    else:
+        st.success(
+            f"🟢 จากตัวเลขที่กรอก หากซื้อ{(' ' + item_name.strip()) if item_name.strip() else 'สินค้านี้'} "
+            f"จะเหลือเงิน ฿{remaining_after_purchase:,.2f} "
+            "ซึ่งยังไม่น้อยกว่าเป้าหมายเงินสำรองที่ตั้งไว้"
+        )
+
+    st.caption(
+        "หมายเหตุ: ผลลัพธ์คำนวณจากยอดรายรับลบรายจ่ายที่บันทึกไว้เท่านั้น "
+        "ควรตรวจสอบค่าใช้จ่ายที่ยังไม่ได้บันทึกก่อนตัดสินใจจริง"
+    )
+
 # =====================================
 # SMART MONEY DETECTIVE + CATEGORY BUDGETS
 # =====================================
